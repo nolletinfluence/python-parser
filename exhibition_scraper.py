@@ -31,10 +31,29 @@ class ExhibitionScraper:
         chrome_options.add_argument("--headless")  # Запуск в фоновом режиме
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--disable-images")
+        chrome_options.add_argument("--disable-javascript")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--allow-running-insecure-content")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
         chrome_options.add_argument(f"--user-agent={self.ua.random}")
         
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        try:
+            # Попытка использовать webdriver-manager
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+        except Exception as e:
+            logger.warning(f"Ошибка с webdriver-manager: {e}")
+            try:
+                # Попытка найти ChromeDriver в PATH
+                driver = webdriver.Chrome(options=chrome_options)
+            except Exception as e2:
+                logger.error(f"Не удалось запустить ChromeDriver: {e2}")
+                raise Exception("ChromeDriver не найден. Установите Chrome браузер и ChromeDriver.")
+        
         return driver
     
     def get_page_content(self, url, use_selenium=False):
@@ -209,18 +228,33 @@ class ExhibitionScraper:
     def save_to_excel(self, filename="exhibition_data.xlsx"):
         """Сохранение данных в Excel"""
         try:
+            # Проверяем, есть ли данные для сохранения
+            if not self.exhibitors_data and not self.contacts_data:
+                logger.warning("Нет данных для сохранения")
+                return
+            
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
                 # Сохраняем данные участников
                 if self.exhibitors_data:
                     df_exhibitors = pd.DataFrame(self.exhibitors_data)
                     df_exhibitors.to_excel(writer, sheet_name='Exhibitors', index=False)
                     logger.info(f"Сохранено {len(self.exhibitors_data)} участников")
+                else:
+                    # Создаем пустой лист с заголовками
+                    df_exhibitors = pd.DataFrame(columns=['Name', 'City', 'Country', 'Website', 'Email'])
+                    df_exhibitors.to_excel(writer, sheet_name='Exhibitors', index=False)
+                    logger.info("Создан пустой лист участников")
                 
                 # Сохраняем данные контактов
                 if self.contacts_data:
                     df_contacts = pd.DataFrame(self.contacts_data)
                     df_contacts.to_excel(writer, sheet_name='Contacts', index=False)
                     logger.info(f"Сохранено {len(self.contacts_data)} контактов")
+                else:
+                    # Создаем пустой лист с заголовками
+                    df_contacts = pd.DataFrame(columns=['Company Name', 'Full Name', 'Position', 'Email', 'Source'])
+                    df_contacts.to_excel(writer, sheet_name='Contacts', index=False)
+                    logger.info("Создан пустой лист контактов")
             
             logger.info(f"Данные сохранены в файл: {filename}")
             
