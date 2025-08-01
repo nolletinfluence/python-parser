@@ -56,9 +56,22 @@ class RequestsOnlyScraper:
         # Ищем ссылку на список участников
         exhibitors_link = None
         links = soup.find_all('a', href=True)
+        
+        # Более точный поиск ссылок на участников
         for link in links:
-            if any(keyword in link.text.lower() for keyword in ['aussteller', 'exhibitor', 'teilnehmer']):
+            link_text = link.get_text(strip=True).lower()
+            link_href = link.get('href', '').lower()
+            
+            # Ищем по тексту ссылки
+            if any(keyword in link_text for keyword in ['aussteller', 'exhibitor', 'teilnehmer', 'teilnehmen']):
                 exhibitors_link = link['href']
+                logger.info(f"Найдена ссылка на участников: {link_text} -> {exhibitors_link}")
+                break
+            
+            # Ищем по URL
+            if any(keyword in link_href for keyword in ['aussteller', 'exhibitor', 'teilnehmer']):
+                exhibitors_link = link['href']
+                logger.info(f"Найдена ссылка на участников по URL: {link_href}")
                 break
         
         if exhibitors_link:
@@ -73,8 +86,10 @@ class RequestsOnlyScraper:
             standard_paths = [
                 "/eltefa/aussteller/",
                 "/eltefa/exhibitors/",
+                "/eltefa/teilnehmer/",
                 "/aussteller/",
-                "/exhibitors/"
+                "/exhibitors/",
+                "/teilnehmer/"
             ]
             for path in standard_paths:
                 test_url = f"https://www.messe-stuttgart.de{path}"
@@ -91,29 +106,71 @@ class RequestsOnlyScraper:
         
         soup = BeautifulSoup(content, 'html.parser')
         
-        # Ищем блоки с участниками
-        exhibitor_blocks = soup.find_all(['div', 'article'], class_=re.compile(r'exhibitor|aussteller|company'))
+        # Более точные селекторы для поиска участников
+        exhibitor_blocks = []
         
-        # Если не нашли по классам, ищем по структуре
+        # 1. Ищем по специфичным классам
+        specific_selectors = [
+            '.exhibitor-item',
+            '.aussteller-item', 
+            '.company-item',
+            '.exhibitor-card',
+            '.aussteller-card',
+            '.exhibitor-list-item',
+            '.aussteller-list-item',
+            '[data-exhibitor]',
+            '[data-aussteller]',
+            '.exhibitor',
+            '.aussteller'
+        ]
+        
+        for selector in specific_selectors:
+            blocks = soup.select(selector)
+            if blocks:
+                exhibitor_blocks.extend(blocks)
+                logger.info(f"Найдено {len(blocks)} блоков с селектором: {selector}")
+        
+        # 2. Если не нашли, ищем по структуре с более строгими критериями
         if not exhibitor_blocks:
-            # Ищем блоки с заголовками и ссылками
+            # Ищем блоки, которые содержат название компании и контактную информацию
             all_divs = soup.find_all('div')
             for div in all_divs:
-                if div.find('h1') or div.find('h2') or div.find('h3'):
-                    if div.find('a') or div.find('p'):
-                        exhibitor_blocks.append(div)
+                # Проверяем, что блок содержит заголовок и ссылку
+                has_title = div.find(['h1', 'h2', 'h3', 'h4', 'strong', 'b'])
+                has_link = div.find('a', href=True)
+                has_text = div.get_text(strip=True)
+                
+                # Фильтруем блоки с осмысленным содержимым
+                if (has_title and has_link and 
+                    len(has_text) > 10 and len(has_text) < 500 and
+                    not any(skip_word in has_text.lower() for skip_word in 
+                           ['exhibition management', 'navigation', 'menu', 'footer', 'header', 'cookie'])):
+                    exhibitor_blocks.append(div)
         
         logger.info(f"Найдено {len(exhibitor_blocks)} потенциальных блоков участников")
         
-        for block in exhibitor_blocks[:10]:  # Ограничиваем для демонстрации
+        # Убираем дубликаты и ограничиваем количество
+        unique_blocks = []
+        seen_names = set()
+        
+        for block in exhibitor_blocks[:20]:  # Ограничиваем для демонстрации
             try:
-                name = self.extract_text(block, ['h1', 'h2', 'h3', '.company-name', '.exhibitor-name'])
-                city = self.extract_text(block, ['.city', '.location', '[data-city]'])
-                country = self.extract_text(block, ['.country', '[data-country]'])
-                website = self.extract_link(block, 'a[href*="http"]')
-                email = self.extract_email(block)
+                name = self.extract_text(block, ['h1', 'h2', 'h3', 'h4', '.company-name', '.exhibitor-name', 'strong', 'b'])
                 
-                if name and len(name) > 2:
+                # Фильтруем нежелательные названия
+                if (name and len(name) > 2 and len(name) < 100 and
+                    name not in seen_names and
+                    not any(skip_word in name.lower() for skip_word in 
+                           ['exhibition', 'management', 'navigation', 'menu', 'footer', 'header', 'cookie', 'privacy'])):
+                    
+                    seen_names.add(name)
+                    unique_blocks.append(block)
+                    
+                    city = self.extract_text(block, ['.city', '.location', '[data-city]'])
+                    country = self.extract_text(block, ['.country', '[data-country]'])
+                    website = self.extract_link(block, 'a[href*="http"]')
+                    email = self.extract_email(block)
+                    
                     self.exhibitors_data.append({
                         'Name': name.strip(),
                         'City': city.strip() if city else '',
@@ -140,9 +197,22 @@ class RequestsOnlyScraper:
         # Ищем ссылку на список участников
         exhibitors_link = None
         links = soup.find_all('a', href=True)
+        
+        # Более точный поиск ссылок на участников
         for link in links:
-            if any(keyword in link.text.lower() for keyword in ['aussteller', 'exhibitor', 'teilnehmer']):
+            link_text = link.get_text(strip=True).lower()
+            link_href = link.get('href', '').lower()
+            
+            # Ищем по тексту ссылки
+            if any(keyword in link_text for keyword in ['aussteller', 'exhibitor', 'teilnehmer', 'teilnehmen']):
                 exhibitors_link = link['href']
+                logger.info(f"Найдена ссылка на участников: {link_text} -> {exhibitors_link}")
+                break
+            
+            # Ищем по URL
+            if any(keyword in link_href for keyword in ['aussteller', 'exhibitor', 'teilnehmer']):
+                exhibitors_link = link['href']
+                logger.info(f"Найдена ссылка на участников по URL: {link_href}")
                 break
         
         if exhibitors_link:
@@ -158,7 +228,9 @@ class RequestsOnlyScraper:
                 "/exhibitors/",
                 "/teilnehmer/",
                 "/en/exhibitors/",
-                "/de/aussteller/"
+                "/de/aussteller/",
+                "/en/aussteller/",
+                "/de/exhibitors/"
             ]
             for path in standard_paths:
                 test_url = f"https://www.ihm.de{path}"
@@ -175,29 +247,71 @@ class RequestsOnlyScraper:
         
         soup = BeautifulSoup(content, 'html.parser')
         
-        # Ищем блоки с участниками
-        exhibitor_blocks = soup.find_all(['div', 'article'], class_=re.compile(r'exhibitor|aussteller|company'))
+        # Более точные селекторы для поиска участников
+        exhibitor_blocks = []
         
-        # Если не нашли по классам, ищем по структуре
+        # 1. Ищем по специфичным классам
+        specific_selectors = [
+            '.exhibitor-item',
+            '.aussteller-item', 
+            '.company-item',
+            '.exhibitor-card',
+            '.aussteller-card',
+            '.exhibitor-list-item',
+            '.aussteller-list-item',
+            '[data-exhibitor]',
+            '[data-aussteller]',
+            '.exhibitor',
+            '.aussteller'
+        ]
+        
+        for selector in specific_selectors:
+            blocks = soup.select(selector)
+            if blocks:
+                exhibitor_blocks.extend(blocks)
+                logger.info(f"Найдено {len(blocks)} блоков с селектором: {selector}")
+        
+        # 2. Если не нашли, ищем по структуре с более строгими критериями
         if not exhibitor_blocks:
-            # Ищем блоки с заголовками и ссылками
+            # Ищем блоки, которые содержат название компании и контактную информацию
             all_divs = soup.find_all('div')
             for div in all_divs:
-                if div.find('h1') or div.find('h2') or div.find('h3'):
-                    if div.find('a') or div.find('p'):
-                        exhibitor_blocks.append(div)
+                # Проверяем, что блок содержит заголовок и ссылку
+                has_title = div.find(['h1', 'h2', 'h3', 'h4', 'strong', 'b'])
+                has_link = div.find('a', href=True)
+                has_text = div.get_text(strip=True)
+                
+                # Фильтруем блоки с осмысленным содержимым
+                if (has_title and has_link and 
+                    len(has_text) > 10 and len(has_text) < 500 and
+                    not any(skip_word in has_text.lower() for skip_word in 
+                           ['exhibition management', 'navigation', 'menu', 'footer', 'header', 'cookie'])):
+                    exhibitor_blocks.append(div)
         
         logger.info(f"Найдено {len(exhibitor_blocks)} потенциальных блоков участников")
         
-        for block in exhibitor_blocks[:10]:  # Ограничиваем для демонстрации
+        # Убираем дубликаты и ограничиваем количество
+        unique_blocks = []
+        seen_names = set()
+        
+        for block in exhibitor_blocks[:20]:  # Ограничиваем для демонстрации
             try:
-                name = self.extract_text(block, ['h1', 'h2', 'h3', '.company-name', '.exhibitor-name'])
-                city = self.extract_text(block, ['.city', '.location', '[data-city]'])
-                country = self.extract_text(block, ['.country', '[data-country]'])
-                website = self.extract_link(block, 'a[href*="http"]')
-                email = self.extract_email(block)
+                name = self.extract_text(block, ['h1', 'h2', 'h3', 'h4', '.company-name', '.exhibitor-name', 'strong', 'b'])
                 
-                if name and len(name) > 2:
+                # Фильтруем нежелательные названия
+                if (name and len(name) > 2 and len(name) < 100 and
+                    name not in seen_names and
+                    not any(skip_word in name.lower() for skip_word in 
+                           ['exhibition', 'management', 'navigation', 'menu', 'footer', 'header', 'cookie', 'privacy'])):
+                    
+                    seen_names.add(name)
+                    unique_blocks.append(block)
+                    
+                    city = self.extract_text(block, ['.city', '.location', '[data-city]'])
+                    country = self.extract_text(block, ['.country', '[data-country]'])
+                    website = self.extract_link(block, 'a[href*="http"]')
+                    email = self.extract_email(block)
+                    
                     self.exhibitors_data.append({
                         'Name': name.strip(),
                         'City': city.strip() if city else '',
