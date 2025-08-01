@@ -27,16 +27,56 @@ class RequestsOnlyScraper:
             headers = {
                 'User-Agent': self.ua.random,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8',  # Немецкий язык в приоритете
                 'Accept-Encoding': 'gzip, deflate',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
                 'Cache-Control': 'max-age=0',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
             }
             
-            response = requests.get(url, headers=headers, timeout=30)
+            # Создаем сессию для сохранения cookies
+            session = requests.Session()
+            session.headers.update(headers)
+            
+            # Сначала получаем страницу для установки cookies
+            response = session.get(url, timeout=30)
             response.raise_for_status()
-            return response.text
+            
+            # Проверяем, есть ли cookie banner и принимаем cookies
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Ищем и нажимаем кнопки принятия cookies
+            cookie_buttons = soup.find_all(['button', 'a'], string=re.compile(r'accept|akzeptieren|einverstanden|ok|zulassen', re.I))
+            
+            if cookie_buttons:
+                logger.info(f"Найдены кнопки cookies на {url}")
+                # Пытаемся принять cookies через POST запрос
+                for button in cookie_buttons:
+                    try:
+                        # Ищем форму для cookies
+                        form = button.find_parent('form')
+                        if form:
+                            form_action = form.get('action', '')
+                            if not form_action.startswith('http'):
+                                form_action = url + form_action
+                            
+                            # Отправляем POST запрос для принятия cookies
+                            session.post(form_action, data={'accept': '1'}, timeout=30)
+                            logger.info("Cookies приняты через форму")
+                            break
+                    except:
+                        continue
+            
+            # Получаем финальную страницу с принятыми cookies
+            final_response = session.get(url, timeout=30)
+            final_response.raise_for_status()
+            
+            return final_response.text
+            
         except Exception as e:
             logger.error(f"Ошибка при получении страницы {url}: {e}")
             return None
@@ -44,7 +84,7 @@ class RequestsOnlyScraper:
     def scrape_eltefa(self):
         """Парсинг выставки ELTEFA"""
         logger.info("Начинаем парсинг ELTEFA...")
-        url = "https://www.messe-stuttgart.de/eltefa/?hl=de-DE"
+        url = "https://www.messe-stuttgart.de/eltefa/"
         
         # Получаем основную страницу
         content = self.get_page_content(url)
@@ -186,7 +226,7 @@ class RequestsOnlyScraper:
     def scrape_ihm(self):
         """Парсинг выставки IHM"""
         logger.info("Начинаем парсинг IHM...")
-        url = "https://www.ihm.de/en/home?hl=de-DE"
+        url = "https://www.ihm.de/de/home"
         
         content = self.get_page_content(url)
         if not content:
