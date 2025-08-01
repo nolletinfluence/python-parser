@@ -21,13 +21,14 @@ def main():
     print("Выберите режим работы:")
     print("1. Базовый парсер (быстрый)")
     print("2. Продвинутый парсер (детальный)")
-    print("3. Только тестирование")
-    print("4. Выход")
+    print("3. Парсер только с requests (без Selenium)")
+    print("4. Только тестирование")
+    print("5. Выход")
     print()
     
     while True:
         try:
-            choice = input("Введите номер (1-4): ").strip()
+            choice = input("Введите номер (1-5): ").strip()
             
             if choice == "1":
                 print("\n[ЗАПУСК] Базовый парсер...")
@@ -44,17 +45,25 @@ def main():
                 break
                 
             elif choice == "3":
+                print("\n[ЗАПУСК] Парсер только с requests...")
+                from requests_only_scraper import RequestsOnlyScraper
+                scraper = RequestsOnlyScraper()
+                scraper.run()
+                print("[ГОТОВО] Парсер с requests завершен!")
+                break
+                
+            elif choice == "4":
                 print("\n[ТЕСТ] Запуск тестирования...")
                 from test_scraper import main as test_main
                 test_main()
                 break
                 
-            elif choice == "4":
+            elif choice == "5":
                 print("\n[ВЫХОД] До свидания!")
                 sys.exit(0)
                 
             else:
-                print("[ОШИБКА] Неверный выбор. Попробуйте снова.")
+                print("[ОШИБКА] Неверный выбор. Попробуйте снова (1-5).")
                 
         except KeyboardInterrupt:
             print("\n\n[ПРЕРВАНО] Работа прервана пользователем.")
